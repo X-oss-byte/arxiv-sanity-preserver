@@ -92,33 +92,24 @@ def papers_search(qraw):
     score += 0.0001*p['tscore']
     scores.append((score, p))
   scores.sort(reverse=True, key=lambda x: x[0]) # descending
-  out = [x[1] for x in scores if x[0] > 0]
-  return out
+  return [x[1] for x in scores if x[0] > 0]
 
 def papers_similar(pid):
   rawpid = strip_version(pid)
 
   # check if we have this paper at all, otherwise return empty list
-  if not rawpid in db: 
+  if rawpid not in db: 
     return []
 
-  # check if we have distances to this specific version of paper id (includes version)
   if pid in sim_dict:
     # good, simplest case: lets return the papers
     return [db[strip_version(k)] for k in sim_dict[pid]]
-  else:
-    # ok we don't have this specific version. could be a stale URL that points to, 
-    # e.g. v1 of a paper, but due to an updated version of it we only have v2 on file
-    # now. We want to use v2 in that case.
-    # lets try to retrieve the most recent version of this paper we do have
-    kok = [k for k in sim_dict if rawpid in k]
-    if kok:
-      # ok we have at least one different version of this paper, lets use it instead
-      id_use_instead = kok[0]
-      return [db[strip_version(k)] for k in sim_dict[id_use_instead]]
-    else:
-      # return just the paper. we dont have similarities for it for some reason
-      return [db[rawpid]]
+  if not (kok := [k for k in sim_dict if rawpid in k]):
+    # return just the paper. we dont have similarities for it for some reason
+    return [db[rawpid]]
+  # ok we have at least one different version of this paper, lets use it instead
+  id_use_instead = kok[0]
+  return [db[strip_version(k)] for k in sim_dict[id_use_instead]]
 
 def papers_from_library():
   out = []
@@ -136,15 +127,15 @@ def papers_from_svm(recent_days=None):
   if g.user:
 
     uid = session['user_id']
-    if not uid in user_sim:
+    if uid not in user_sim:
       return []
-    
+
     # we want to exclude papers that are already in user library from the result, so fetch them.
     user_library = query_db('''select * from library where user_id = ?''', [uid])
     libids = {strip_version(x['paper_id']) for x in user_library}
 
     plist = user_sim[uid]
-    out = [db[x] for x in plist if not x in libids]
+    out = [db[x] for x in plist if x not in libids]
 
     if recent_days is not None:
       # filter as well to only most recent papers
@@ -154,11 +145,7 @@ def papers_from_svm(recent_days=None):
   return out
 
 def papers_filter_version(papers, v):
-  if v != '1': 
-    return papers # noop
-  intv = int(v)
-  filtered = [p for p in papers if p['_version'] == intv]
-  return filtered
+  return papers if v != '1' else [p for p in papers if p['_version'] == int(v)]
 
 def encode_json(ps, n=10, send_images=True, send_abstracts=True):
 
@@ -173,25 +160,28 @@ def encode_json(ps, n=10, send_images=True, send_abstracts=True):
   for i in range(min(len(ps),n)):
     p = ps[i]
     idvv = '%sv%d' % (p['_rawid'], p['_version'])
-    struct = {}
-    struct['title'] = p['title']
-    struct['pid'] = idvv
-    struct['rawpid'] = p['_rawid']
-    struct['category'] = p['arxiv_primary_category']['term']
-    struct['authors'] = [a['name'] for a in p['authors']]
-    struct['link'] = p['link']
-    struct['in_library'] = 1 if p['_rawid'] in libids else 0
+    struct = {
+        'title': p['title'],
+        'pid': idvv,
+        'rawpid': p['_rawid'],
+        'category': p['arxiv_primary_category']['term'],
+        'authors': [a['name'] for a in p['authors']],
+        'link': p['link'],
+        'in_library': 1 if p['_rawid'] in libids else 0,
+    }
     if send_abstracts:
       struct['abstract'] = p['summary']
     if send_images:
-      struct['img'] = '/static/thumbs/' + idvv + '.pdf.jpg'
+      struct['img'] = f'/static/thumbs/{idvv}.pdf.jpg'
     struct['tags'] = [t['term'] for t in p['tags']]
-    
+
     # render time information nicely
     timestruct = dateutil.parser.parse(p['updated'])
-    struct['published_time'] = '%s/%s/%s' % (timestruct.month, timestruct.day, timestruct.year)
+    struct[
+        'published_time'] = f'{timestruct.month}/{timestruct.day}/{timestruct.year}'
     timestruct = dateutil.parser.parse(p['published'])
-    struct['originally_published_time'] = '%s/%s/%s' % (timestruct.month, timestruct.day, timestruct.year)
+    struct[
+        'originally_published_time'] = f'{timestruct.month}/{timestruct.day}/{timestruct.year}'
 
     # fetch amount of discussion on this paper
     struct['num_discussion'] = comments.count({ 'pid': p['_rawid'] })
@@ -199,7 +189,7 @@ def encode_json(ps, n=10, send_images=True, send_abstracts=True):
     # arxiv comments from the authors (when they submit the paper)
     cc = p.get('arxiv_comment', '')
     if len(cc) > 100:
-      cc = cc[:100] + '...' # crop very long comments
+      cc = f'{cc[:100]}...'
     struct['comment'] = cc
 
     ret.append(struct)
@@ -289,12 +279,12 @@ def comment():
     username = get_username(session['user_id'])
   else:
     # generate a unique username if user wants to be anon, or user not logged in.
-    username = 'anon-%s-%s' % (str(int(time.time())), str(randrange(1000)))
+    username = f'anon-{int(time.time())}-{str(randrange(1000))}'
 
   # process the raw pid and validate it, etc
   try:
     pid = request.form['pid']
-    if not pid in db: raise Exception("invalid pid")
+    if pid not in db: raise Exception("invalid pid")
     version = db[pid]['_version'] # most recent version of this paper
   except Exception as e:
     print(e)
@@ -326,7 +316,7 @@ def discussions():
   have = set()
   for e in comms_cursor:
     pid = e['pid']
-    if pid in db and not pid in have:
+    if pid in db and pid not in have:
       have.add(pid)
       papers.append(db[pid])
 
@@ -341,8 +331,8 @@ def toggletag():
 
   # get the tag and validate it as an allowed tag
   tag_name = request.form['tag_name']
-  if not tag_name in TAGS:
-    print('tag name %s is not in allowed tags.' % (tag_name, ))
+  if tag_name not in TAGS:
+    print(f'tag name {tag_name} is not in allowed tags.')
     return "Bad tag name. This is most likely Andrej's fault."
 
   pid = request.form['pid']
@@ -415,8 +405,12 @@ def toptwtr():
       papers.append(db[rec['pid']])
       tweet = {k:v for k,v in rec.items() if k != '_id'}
       tweets.append(tweet)
-  ctx = default_context(papers, render_format='toptwtr', tweets=tweets,
-                        msg='Top papers mentioned on Twitter over last ' + ttstr + ':')
+  ctx = default_context(
+      papers,
+      render_format='toptwtr',
+      tweets=tweets,
+      msg=f'Top papers mentioned on Twitter over last {ttstr}:',
+  )
   return render_template('main.html', **ctx)
 
 @app.route('/library')
@@ -443,7 +437,7 @@ def review():
   if not isvalidid(idvv):
     return 'NO' # fail, malformed id. weird.
   pid = strip_version(idvv)
-  if not pid in db:
+  if pid not in db:
     return 'NO' # we don't know this paper. wat
 
   uid = session['user_id'] # id of logged in user
@@ -457,7 +451,6 @@ def review():
   if record:
     # record exists, erase it.
     g.db.execute('''delete from library where user_id = ? and paper_id = ?''', [uid, pid])
-    g.db.commit()
     #print('removed %s for %s' % (pid, uid))
     ret = 'OFF'
   else:
@@ -465,80 +458,81 @@ def review():
     rawpid = strip_version(pid)
     g.db.execute('''insert into library (paper_id, user_id, update_time) values (?, ?, ?)''',
         [rawpid, uid, int(time.time())])
-    g.db.commit()
     #print('added %s for %s' % (pid, uid))
     ret = 'ON'
 
+  g.db.commit()
   return ret
 
 @app.route('/friends', methods=['GET'])
 def friends():
     
-    ttstr = request.args.get('timefilter', 'week') # default is week
-    legend = {'day':1, '3days':3, 'week':7, 'month':30, 'year':365}
-    tt = legend.get(ttstr, 7)
+  ttstr = request.args.get('timefilter', 'week') # default is week
+  legend = {'day':1, '3days':3, 'week':7, 'month':30, 'year':365}
+  tt = legend.get(ttstr, 7)
 
-    papers = []
-    pid_to_users = {}
-    if g.user:
-        # gather all the people we are following
-        username = get_username(session['user_id'])
-        edges = list(follow_collection.find({ 'who':username }))
-        # fetch all papers in all of their libraries, and count the top ones
-        counts = {}
-        for edict in edges:
-            whom = edict['whom']
-            uid = get_user_id(whom)
-            user_library = query_db('''select * from library where user_id = ?''', [uid])
-            libids = [strip_version(x['paper_id']) for x in user_library]
-            for lid in libids:
-                if not lid in counts:
-                    counts[lid] = []
-                counts[lid].append(whom)
+  papers = []
+  pid_to_users = {}
+  if g.user:
+    # gather all the people we are following
+    username = get_username(session['user_id'])
+    edges = list(follow_collection.find({ 'who':username }))
+    # fetch all papers in all of their libraries, and count the top ones
+    counts = {}
+    for edict in edges:
+      whom = edict['whom']
+      uid = get_user_id(whom)
+      user_library = query_db('''select * from library where user_id = ?''', [uid])
+      libids = [strip_version(x['paper_id']) for x in user_library]
+      for lid in libids:
+        if lid not in counts:
+          counts[lid] = []
+        counts[lid].append(whom)
 
-        keys = list(counts.keys())
-        keys.sort(key=lambda k: len(counts[k]), reverse=True) # descending by count
-        papers = [db[x] for x in keys]
-        # finally filter by date
-        curtime = int(time.time()) # in seconds
-        papers = [x for x in papers if curtime - x['time_published'] < tt*24*60*60]
-        # trim at like 100
-        if len(papers) > 100: papers = papers[:100]
-        # trim counts as well correspondingly
-        pid_to_users = { p['_rawid'] : counts.get(p['_rawid'], []) for p in papers }
+    keys = list(counts.keys())
+    keys.sort(key=lambda k: len(counts[k]), reverse=True) # descending by count
+    papers = [db[x] for x in keys]
+    # finally filter by date
+    curtime = int(time.time()) # in seconds
+    papers = [x for x in papers if curtime - x['time_published'] < tt*24*60*60]
+    # trim at like 100
+    if len(papers) > 100: papers = papers[:100]
+    # trim counts as well correspondingly
+    pid_to_users = { p['_rawid'] : counts.get(p['_rawid'], []) for p in papers }
 
-    if not g.user:
-        msg = "You must be logged in and follow some people to enjoy this tab."
-    else:
-        if len(papers) == 0:
-            msg = "No friend papers present. Try to extend the time range, or add friends by clicking on your account name (top, right)"
-        else:
-            msg = "Papers in your friend's libraries:"
+  if not g.user:
+    msg = "You must be logged in and follow some people to enjoy this tab."
+  elif len(papers) == 0:
+    msg = "No friend papers present. Try to extend the time range, or add friends by clicking on your account name (top, right)"
+  else:
+    msg = "Papers in your friend's libraries:"
 
-    ctx = default_context(papers, render_format='friends', pid_to_users=pid_to_users, msg=msg)
-    return render_template('main.html', **ctx)
+  ctx = default_context(papers, render_format='friends', pid_to_users=pid_to_users, msg=msg)
+  return render_template('main.html', **ctx)
 
 @app.route('/account')
 def account():
-    ctx = { 'totpapers':len(db) }
+  ctx = { 'totpapers':len(db) }
 
-    followers = []
-    following = []
+  followers = []
+  following = []
     # fetch all followers/following of the logged in user
-    if g.user:
-        username = get_username(session['user_id'])
-        
-        following_db = list(follow_collection.find({ 'who':username }))
-        for e in following_db:
-            following.append({ 'user':e['whom'], 'active':e['active'] })
+  if g.user:
+    username = get_username(session['user_id'])
 
-        followers_db = list(follow_collection.find({ 'whom':username }))
-        for e in followers_db:
-            followers.append({ 'user':e['who'], 'active':e['active'] })
-
-    ctx['followers'] = followers
-    ctx['following'] = following
-    return render_template('account.html', **ctx)
+    following_db = list(follow_collection.find({ 'who':username }))
+    following.extend({
+        'user': e['whom'],
+        'active': e['active']
+    } for e in following_db)
+    followers_db = list(follow_collection.find({ 'whom':username }))
+    followers.extend({
+        'user': e['who'],
+        'active': e['active']
+    } for e in followers_db)
+  ctx['followers'] = followers
+  ctx['following'] = following
+  return render_template('account.html', **ctx)
 
 @app.route('/requestfollow', methods=['POST'])
 def requestfollow():
@@ -582,20 +576,20 @@ def removefollow():
 
 @app.route('/addfollow', methods=['POST'])
 def addfollow():
-    user = request.form['user']
-    lst = request.form['lst']
-    if user and lst:
-        username = get_username(session['user_id'])
-        if lst == 'followers':
-            # user clicked "OK" in the followers list, wants to approve some follower. make active.
-            who = user
-            whom = username
-            delq = { 'who':who, 'whom':whom }
-            print('making active in follow collection:', delq)
-            follow_collection.update_one(delq, {'$set':{'active':1}})
-            return 'OK'
-        
-    return 'NOTOK'
+  user = request.form['user']
+  lst = request.form['lst']
+  if user and lst:
+    if lst == 'followers':
+      # user clicked "OK" in the followers list, wants to approve some follower. make active.
+      who = user
+      username = get_username(session['user_id'])
+      whom = username
+      delq = { 'who':who, 'whom':whom }
+      print('making active in follow collection:', delq)
+      follow_collection.update_one(delq, {'$set':{'active':1}})
+      return 'OK'
+
+  return 'NOTOK'
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -627,8 +621,8 @@ def login():
     g.db.commit()
 
     session['user_id'] = user_id
-    flash('New account %s created' % (request.form['username'], ))
-  
+    flash(f"New account {request.form['username']} created")
+
   return redirect(url_for('intmain'))
 
 @app.route('/logout')

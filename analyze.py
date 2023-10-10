@@ -2,6 +2,7 @@
 Reads txt files of all papers and computes tfidf vectors for all papers.
 Dumps results to file tfidf.p
 """
+
 import os
 import pickle
 from random import shuffle, seed
@@ -20,9 +21,7 @@ db = pickle.load(open(Config.db_path, 'rb'))
 
 # read all text files for all papers into memory
 txt_paths, pids = [], []
-n = 0
-for pid,j in db.items():
-  n += 1
+for n, (pid, j) in enumerate(db.items(), start=1):
   idvv = '%sv%d' % (j['_rawid'], j['_version'])
   txt_path = os.path.join('data', 'txt', idvv) + '.pdf.txt'
   if os.path.isfile(txt_path): # some pdfs dont translate to txt
@@ -35,7 +34,7 @@ for pid,j in db.items():
     else:
       print("skipped %d/%d (%s) with %d chars: suspicious!" % (n, len(db), idvv, len(txt)))
   else:
-    print("could not find %s in txt folder." % (txt_path, ))
+    print(f"could not find {txt_path} in txt folder.")
 print("in total read in %d text files out of %d db entries." % (len(txt_paths), len(db)))
 
 # compute tfidf vectors with scikits
@@ -70,8 +69,7 @@ print(v.vocabulary_)
 print(X.shape)
 
 # write full matrix out
-out = {}
-out['X'] = X # this one is heavy!
+out = {'X': X}
 print("writing", Config.tfidf_path)
 safe_pickle_dump(out, Config.tfidf_path)
 
