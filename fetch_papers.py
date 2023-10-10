@@ -19,16 +19,10 @@ def encode_feedparser_dict(d):
   helper function to get rid of feedparser bs with a deep copy. 
   I hate when libs wrap simple things in their own classes.
   """
-  if isinstance(d, feedparser.FeedParserDict) or isinstance(d, dict):
-    j = {}
-    for k in d.keys():
-      j[k] = encode_feedparser_dict(d[k])
-    return j
+  if isinstance(d, (feedparser.FeedParserDict, dict)):
+    return {k: encode_feedparser_dict(d[k]) for k in d.keys()}
   elif isinstance(d, list):
-    l = []
-    for k in d:
-      l.append(encode_feedparser_dict(k))
-    return l
+    return [encode_feedparser_dict(k) for k in d]
   else:
     return d
 
@@ -40,7 +34,7 @@ def parse_arxiv_url(url):
   ix = url.rfind('/')
   idversion = url[ix+1:] # extract just the id (and the version)
   parts = idversion.split('v')
-  assert len(parts) == 2, 'error parsing url ' + url
+  assert len(parts) == 2, f'error parsing url {url}'
   return parts[0], int(parts[1])
 
 if __name__ == "__main__":
@@ -59,7 +53,7 @@ if __name__ == "__main__":
 
   # misc hardcoded variables
   base_url = 'http://export.arxiv.org/api/query?' # base api query url
-  print('Searching arXiv for %s' % (args.search_query, ))
+  print(f'Searching arXiv for {args.search_query}')
 
   # lets load the existing database to memory
   try:
@@ -94,9 +88,11 @@ if __name__ == "__main__":
       j['_version'] = version
 
       # add to our database if we didn't have it before, or if this is a new version
-      if not rawid in db or j['_version'] > db[rawid]['_version']:
+      if rawid not in db or j['_version'] > db[rawid]['_version']:
         db[rawid] = j
-        print('Updated %s added %s' % (j['updated'].encode('utf-8'), j['title'].encode('utf-8')))
+        print(
+            f"Updated {j['updated'].encode('utf-8')} added {j['title'].encode('utf-8')}"
+        )
         num_added += 1
         num_added_total += 1
       else:
